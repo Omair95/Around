@@ -26,6 +26,8 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Toast;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
@@ -36,10 +38,13 @@ import com.google.android.gms.maps.model.MarkerOptions;
 
 
 public class MainActivity extends AppCompatActivity
-        implements NavigationView.OnNavigationItemSelectedListener,OnMapReadyCallback, LocationListener {
+        implements NavigationView.OnNavigationItemSelectedListener,OnMapReadyCallback,GoogleApiClient.OnConnectionFailedListener,
+        GoogleApiClient.ConnectionCallbacks {
     private GoogleMap mMap;
-    private LocationManager locationManager;
-    private String provider;
+    private static final String LOGTAG = "android-localizacion";
+    private static final int PETICION_PERMISO_LOCALIZACION = 101;
+    private GoogleApiClient apiClient;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,7 +72,13 @@ public class MainActivity extends AppCompatActivity
         NavigationView navigationView = (NavigationView) findViewById(R.id.nav_view);
         navigationView.setNavigationItemSelectedListener(this);
 
-        getLocation();
+
+        //LOCATION
+        apiClient = new GoogleApiClient.Builder(this)
+                .enableAutoManage(this, this)
+                .addConnectionCallbacks(this)
+                .addApi(LocationServices.API)
+                .build();
 
 
         //GOOGLE MAPS
@@ -80,32 +91,7 @@ public class MainActivity extends AppCompatActivity
     }
 
 
-    protected void getLocation() {
-        if (isLocationEnabled(MainActivity.this)) {
-            locationManager = (LocationManager)  this.getSystemService(Context.LOCATION_SERVICE);
-            criteria = new Criteria();
-            bestProvider = String.valueOf(locationManager.getBestProvider(criteria, true)).toString();
 
-            //You can still do this if you like, you might get lucky:
-            Location location = locationManager.getLastKnownLocation(bestProvider);
-            if (location != null) {
-                Log.e("TAG", "GPS is on");
-                latitude = location.getLatitude();
-                longitude = location.getLongitude();
-                Toast.makeText(MainActivity.this, "latitude:" + latitude + " longitude:" + longitude, Toast.LENGTH_SHORT).show();
-                searchNearestPlace(voice2text);
-            }
-            else{
-                //This is what you need:
-                locationManager.requestLocationUpdates(bestProvider, 1000, 0, this);
-            }
-        }
-        else
-        {
-            //prompt user to enable location....
-            //.................
-        }
-    }
 
     @Override
     public void onBackPressed() {
@@ -184,32 +170,62 @@ public class MainActivity extends AppCompatActivity
         mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
     }
 
-    //LOCATION FUNCTIONS
-    @Override
-    public void onLocationChanged(Location location) {
-        String msg = "New Latitude: " + location.getLatitude()
-                + "New Longitude: " + location.getLongitude();
-
-        Toast.makeText(getBaseContext(), msg, Toast.LENGTH_LONG).show();
+    private void putMarker(Location location, String title){
+        LatLng place = new LatLng(location.getLatitude(), location.getLongitude());
+        mMap.addMarker(new MarkerOptions().position(place).title(title));
+        mMap.moveCamera(CameraUpdateFactory.newLatLng(place));
     }
 
     @Override
-    public void onStatusChanged(String provider, int status, Bundle extras) {
+    public void onConnected(Bundle bundle) {
+        if (ActivityCompat.checkSelfPermission(this,
+                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
 
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    PETICION_PERMISO_LOCALIZACION);
+        } else {
+
+            Location lastLocation =
+                    LocationServices.FusedLocationApi.getLastLocation(apiClient);
+
+            putMarker(lastLocation, "Albert");
+        }
     }
 
     @Override
-    public void onProviderEnabled(String provider) {
-        Toast.makeText(getBaseContext(), "Gps is turned on!! ",
-                Toast.LENGTH_SHORT).show();
+    public void onConnectionSuspended(int i) {
+        Log.e(LOGTAG, "Se ha interrumpido la conexión con Google Play Services");
     }
 
     @Override
-    public void onProviderDisabled(String provider) {
-        Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
-        startActivity(intent);
-        Toast.makeText(getBaseContext(), "Gps is turned off!! ",
-                Toast.LENGTH_SHORT).show();
+    public void onConnectionFailed(ConnectionResult connectionResult) {
+        Log.e(LOGTAG, "Error grave al conectar con Google Play Services");
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == PETICION_PERMISO_LOCALIZACION) {
+            if (grantResults.length == 1
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+
+                //Permiso concedido
+
+                if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                        || ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    Location lastLocation = LocationServices.FusedLocationApi.getLastLocation(apiClient);
+
+
+                    putMarker(lastLocation, "Albert");
+                }
+
+            } else {
+                //Permiso denegado:
+                //Deberíamos deshabilitar toda la funcionalidad relativa a la localización.
+
+                Log.e(LOGTAG, "Permiso denegado");
+            }
+        }
     }
 }
 
